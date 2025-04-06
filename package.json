@@ -1,0 +1,24 @@
+{
+    "name": "merkle-tree-lib",
+    "description": "Merkle Tree implementation with BIP340 tagged hash support.",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+      "build": "tsc",
+      "test": "jest"
+    },
+    "jest": {
+        "preset": "ts-jest",
+        "testEnvironment": "node"
+    },
+    "keywords": ["merkle", "tree", "proof", "reserve", "bip340", "typescript"],
+    "author": "Tokiie",
+    "license": "MIT",
+    "devDependencies": {
+      "typescript": "^5.0.0",
+      "jest": "^29.0.0",
+      "ts-jest": "^29.0.0",
+      "@types/jest": "^29.0.0"
+    }
+  }
