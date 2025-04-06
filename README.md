@@ -10,6 +10,7 @@ A TypeScript implementation of a binary Merkle tree with tagged hashing based on
 - Merkle proof generation for membership verification
 - Automatic padding for trees with odd numbers of leaves
 - TypeScript declarations for better development experience
+- Default tags for easier implementation
 
 ## Installation
 
@@ -29,6 +30,7 @@ npm install file:../path/to/merkle-tree-lib
 
 ```typescript
 import { MerkleTree } from 'merkle-tree-lib';
+import { HashStrategyFactory, HashStrategyType } from 'merkle-tree-lib';
 
 // Data to include in the Merkle tree
 const data = [
@@ -37,70 +39,73 @@ const data = [
   'account3:2500'
 ];
 
-// Create a Merkle tree with default "Bitcoin_Transaction" tags
-const tree = new MerkleTree(data);
+// Create hash strategy (uses default "Bitcoin_Transaction" tag if not specified)
+const hashStrategy = HashStrategyFactory.createStrategy(HashStrategyType.TAGGED_SHA256);
+
+// Create a Merkle tree with the hash strategy
+const tree = new MerkleTree(data, hashStrategy);
 
 // Get the Merkle root hash as a hex string
-const rootHash = tree.getHexRoot();
+const rootHash = tree.getRootHex();
 console.log('Merkle Root:', rootHash);
 
 // Generate a proof for the second item (index 1)
-const proof = tree.getProof(1);
+const proof = tree.generateProof(1);
 console.log('Proof for account2:', proof);
 ```
 
 ### Custom Tags
 
-You can specify custom tags for leaf and branch nodes:
+You can specify custom tags when creating the hash strategy:
 
 ```typescript
 // Using custom tags for a proof-of-reserve application
 const leafTag = 'ProofOfReserve_Leaf';
 const branchTag = 'ProofOfReserve_Branch';
 
-const tree = new MerkleTree(data, leafTag, branchTag);
+// Create hash strategies with custom tags
+const leafHashStrategy = HashStrategyFactory.createStrategy(
+  HashStrategyType.TAGGED_SHA256,
+  { tag: leafTag }
+);
+const branchHashStrategy = HashStrategyFactory.createStrategy(
+  HashStrategyType.TAGGED_SHA256,
+  { tag: branchTag }
+);
+
+// Create the tree with custom hash strategies
+const tree = new MerkleTree(data, leafHashStrategy, branchHashStrategy);
 ```
 
 ### Verifying Proofs
 
-While the library doesn't include a built-in verification function, here's how to verify a proof:
+Here's how to verify a proof:
 
 ```typescript
-import * as crypto from 'crypto';
+import { HashStrategyFactory, HashStrategyType, ProofDirection } from 'merkle-tree-lib';
 
 // Example function to verify a Merkle proof
 function verifyProof(
   leafData: string,
-  leafIndex: number,
-  proof: { siblingHash: Buffer, side: 0 | 1 }[],
+  proof: Array<{ siblingHash: Buffer, direction: ProofDirection }>,
   merkleRoot: Buffer,
-  leafTag: string = "Bitcoin_Transaction",
-  branchTag: string = "Bitcoin_Transaction"
+  tagName: string = "Bitcoin_Transaction"
 ): boolean {
-  // Compute the tag hashes
-  const tagHashLeaf = crypto.createHash('sha256').update(leafTag, 'utf8').digest();
-  const tagHashBranch = crypto.createHash('sha256').update(branchTag, 'utf8').digest();
+  // Create the hash strategy (defaults to "Bitcoin_Transaction" if tag not specified)
+  const hashStrategy = HashStrategyFactory.createStrategy(HashStrategyType.TAGGED_SHA256);
 
   // Hash the leaf data
-  const leafDataBuffer = Buffer.from(leafData, 'utf8');
-  let currentHash = crypto.createHash('sha256')
-                           .update(tagHashLeaf)
-                           .update(tagHashLeaf)
-                           .update(leafDataBuffer)
-                           .digest();
+  let currentHash = hashStrategy.hash(leafData);
 
   // Apply each proof element to compute the potential root
-  for (const { siblingHash, side } of proof) {
-    // Determine the order of concatenation based on side
-    const left = side === 0 ? siblingHash : currentHash;
-    const right = side === 0 ? currentHash : siblingHash;
+  for (const { siblingHash, direction } of proof) {
+    // Combine hashes based on the direction
+    const combinedData = direction === ProofDirection.LEFT
+      ? Buffer.concat([siblingHash, currentHash])
+      : Buffer.concat([currentHash, siblingHash]);
 
     // Compute the parent hash
-    currentHash = crypto.createHash('sha256')
-                         .update(tagHashBranch)
-                         .update(tagHashBranch)
-                         .update(Buffer.concat([left, right]))
-                         .digest();
+    currentHash = hashStrategy.hash(combinedData);
   }
 
   // Check if the computed root matches the expected root
@@ -108,15 +113,12 @@ function verifyProof(
 }
 
 // Usage example
-const tree = new MerkleTree(data, 'ProofOfReserve_Leaf', 'ProofOfReserve_Branch');
-const proof = tree.getProof(1); // Get proof for the second item
+const tree = new MerkleTree(data, HashStrategyFactory.createStrategy(HashStrategyType.TAGGED_SHA256));
+const proof = tree.generateProof(1); // Get proof for the second item
 const isValid = verifyProof(
-  data[1],              // The original data
-  1,                    // The index of the data
-  proof,                // The Merkle proof
-  tree.root,            // The Merkle root
-  'ProofOfReserve_Leaf',
-  'ProofOfReserve_Branch'
+  data[1],             // The original data
+  proof.getElements(), // The proof elements
+  tree.getRoot()       // The Merkle root
 );
 
 console.log('Proof verification result:', isValid);
@@ -124,42 +126,58 @@ console.log('Proof verification result:', isValid);
 
 ## API Reference
 
+### HashStrategyFactory
+
+#### createStrategy
+
+```typescript
+static createStrategy(type: HashStrategyType, options?: { tag?: string }): HashStrategy
+```
+
+Creates a hash strategy with the specified type and options.
+
+- `type`: The hash strategy type (e.g., `HashStrategyType.TAGGED_SHA256`)
+- `options`: Additional options
+  - `tag`: Tag for tagged hashing (default: "Bitcoin_Transaction" for TaggedSha256Strategy)
+
 ### MerkleTree
 
 #### Constructor
 
 ```typescript
-constructor(leavesData: string[], leafTag: string = "Bitcoin_Transaction", branchTag: string = "Bitcoin_Transaction")
+constructor(
+  data: string[],
+  leafHashStrategy: HashStrategy = new TaggedSha256Strategy("Bitcoin_Transaction"),
+  branchHashStrategy: HashStrategy = new TaggedSha256Strategy("Bitcoin_Transaction")
+)
 ```
 
 Creates a new Merkle tree from the provided data.
 
-- `leavesData`: Array of strings to be included in the tree
-- `leafTag`: Tag for hashing leaves (default: "Bitcoin_Transaction")
-- `branchTag`: Tag for hashing internal nodes (default: "Bitcoin_Transaction")
+- `data`: Array of strings to be included in the tree
+- `leafHashStrategy`: Strategy for hashing leaves (default: TaggedSha256 with "Bitcoin_Transaction" tag)
+- `branchHashStrategy`: Strategy for hashing internal nodes (default: TaggedSha256 with "Bitcoin_Transaction" tag)
 
 #### Methods
 
-##### getHexRoot
+##### getRootHex
 
 ```typescript
-getHexRoot(): string
+getRootHex(): string
 ```
 
 Returns the Merkle root as a hexadecimal string.
 
-##### getProof
+##### generateProof
 
 ```typescript
-getProof(index: number): { siblingHash: Buffer, side: 0 | 1 }[]
+generateProof(index: number): MerkleProof
 ```
 
 Generates a proof for the leaf at the specified index.
 
 - `index`: The index of the leaf in the original data array
-- Returns: An array of proof elements, each containing:
-  - `siblingHash`: The hash of the sibling node
-  - `side`: 0 if the sibling is on the left, 1 if on the right
+- Returns: A MerkleProof object containing proof elements
 
 ## How It Works
 

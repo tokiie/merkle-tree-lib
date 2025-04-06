@@ -1,11 +1,15 @@
 /**
  * Merkle Tree Library
  *
- * Implements a binary Merkle tree with tagged hashing, suitable for
- * proof-of-reserve and other verification systems.
- *
- * @module merkle-tree-lib
+ * A TypeScript library for creating and verifying Merkle trees with
+ * configurable hash strategies.
  */
 
-// Export the MerkleTree class
-export { MerkleTree } from './merkleTree';
+// Re-export hash module
+export * from './hash';
+
+// Re-export proof module
+export * from './proof';
+
+// Re-export tree module
+export * from './tree';
